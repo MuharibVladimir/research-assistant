@@ -23,6 +23,7 @@ test uses; we're testing the *plumbing*, not the LLM.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 
 import pytest
@@ -41,10 +42,8 @@ async def _drain_sse(client, tid: str) -> list[tuple[str, dict]]:
                 current_event = line.removeprefix("event:").strip()
             elif line.startswith("data:") and current_event:
                 payload = line.removeprefix("data:").strip()
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     events.append((current_event, json.loads(payload)))
-                except json.JSONDecodeError:
-                    pass
                 if current_event in ("done", "error"):
                     break
     return events
@@ -123,26 +122,20 @@ async def test_plan_override_during_interrupt_survives_gap(async_client):
     committing the override; after a delay, /stream must see the edited
     plan, not the planner's original.
     """
-    start = await async_client.post(
-        "/research/start", json={"topic": "Plan-override recovery"}
-    )
+    start = await async_client.post("/research/start", json={"topic": "Plan-override recovery"})
     tid = start.json()["thread_id"]
     original = (await async_client.get(f"/research/{tid}/plan")).json()["plan"]
 
     edited = ["Section A (edited)", "Section B (edited)"]
     assert edited != original
 
-    approve = await async_client.post(
-        f"/research/{tid}/approve", json={"plan": edited}
-    )
+    approve = await async_client.post(f"/research/{tid}/approve", json={"plan": edited})
     assert approve.status_code == 200
 
     await asyncio.sleep(1)
 
     after_gap = (await async_client.get(f"/research/{tid}/plan")).json()["plan"]
-    assert after_gap == edited, (
-        f"plan override lost across the approve/sleep gap: {after_gap}"
-    )
+    assert after_gap == edited, f"plan override lost across the approve/sleep gap: {after_gap}"
 
     # And the stream completes using the edited plan.
     events = await _drain_sse(async_client, tid)
