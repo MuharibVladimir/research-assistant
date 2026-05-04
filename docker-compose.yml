@@ -1,0 +1,160 @@
+services:
+  # -----------------------------------------------------------------
+  # Data plane (internal network only — host ports bind to 127.0.0.1).
+  #
+  # Host-port binding (M-2): every data/observability port is published on
+  # 127.0.0.1 only, so a misconfigured VPS / exposed cloud VM doesn't accidentally
+  # leak Redis, Postgres, Prometheus, or Grafana to the public internet.
+  # -----------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    # Redis password (M-3) — rate-limit store leaks active API keys without it.
+    command:
+      - redis-server
+      - --maxmemory
+      - 128mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-research}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-research_db}
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks: [internal]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-research} -d ${POSTGRES_DB:-research_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------
+  # One-shot — applies Alembic migrations at startup
+  # -----------------------------------------------------------------
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-research}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-research_db}
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # -----------------------------------------------------------------
+  # FastAPI API server — the only externally-exposed service.
+  # -----------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-research}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-research_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    ports:
+      - "8000:8000"
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------
+  # Telegram bot — talks to `app` over internal network
+  # -----------------------------------------------------------------
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "bot.bot"]
+    env_file: .env
+    environment:
+      API_BASE_URL: http://app:8000
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    networks: [internal]
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------
+  # Observability plane (bound to localhost; production should front
+  # these with an auth proxy rather than exposing them directly).
+  # -----------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks: [internal]
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    environment:
+      # Grafana admin password (M-4) — default admin:admin is a classic
+      # dashboard-credential leak. Require GRAFANA_PASSWORD in .env.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+    volumes:
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [internal]
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:

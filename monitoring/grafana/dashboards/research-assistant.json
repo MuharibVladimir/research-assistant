@@ -1,0 +1,128 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "id": null,
+  "title": "Research Assistant",
+  "tags": ["research-assistant", "langgraph"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Request rate (req/s) by route",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (handler) (rate(http_requests_total[1m]))",
+          "legendFormat": "{{handler}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Error rate (5xx) req/s",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum (rate(http_requests_total{status=~\"5..\"}[1m]))",
+          "legendFormat": "5xx",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Graph node latency (p50 / p95 / p99)",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, node) (rate(graph_node_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{node}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, node) (rate(graph_node_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{node}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, node) (rate(graph_node_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{node}} p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Cache hit rate (last 15m)",
+      "gridPos": { "h": 9, "w": 6, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(increase(cache_hit_total[15m])) / clamp_min(sum(increase(cache_hit_total[15m])) + sum(increase(cache_miss_total[15m])), 1)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "LLM cost (USD) last 1h",
+      "gridPos": { "h": 9, "w": 6, "x": 18, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(increase(llm_cost_usd_total[1h]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 } },
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Tokens/sec by type",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+      "targets": [
+        {
+          "expr": "sum by (type) (rate(llm_tokens_total[1m]))",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Graph node errors / sec",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
+      "targets": [
+        {
+          "expr": "sum by (node) (rate(graph_nodes_total{status=\"error\"}[1m]))",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    }
+  ]
+}

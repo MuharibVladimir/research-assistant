@@ -1,0 +1,50 @@
+# Fly.io configuration for the Research Assistant FastAPI service.
+#
+# Usage:
+#   flyctl launch --no-deploy --copy-config         # first-time setup
+#   flyctl postgres create --name research-pg      # provision pgvector-capable db
+#   flyctl postgres attach research-pg             # sets DATABASE_URL secret
+#   flyctl redis create --name research-redis      # Upstash-backed Redis
+#   flyctl secrets set OPENAI_API_KEY=... TAVILY_API_KEY=... RESEARCH_API_KEY=...
+#   flyctl deploy
+#
+# To deploy the Telegram bot as a separate app, copy this file to `fly.bot.toml`
+# and set `processes.cmd = ["python", "-m", "bot.bot"]`. Bot reads API_BASE_URL
+# from env (set it to the deployed app's internal `.internal` hostname).
+
+app = "research-assistant"
+primary_region = "fra"  # Frankfurt — low latency to OpenAI
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LOG_FORMAT = "json"
+  SENTRY_ENVIRONMENT = "production"
+  # DATABASE_URL, REDIS_URL, OPENAI_API_KEY, TAVILY_API_KEY, etc. come from `flyctl secrets`.
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"   # scale-to-zero when idle
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout  = "5s"
+    grace_period = "15s"
+    method   = "GET"
+    path     = "/health/ready"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[processes]
+  app = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+[deploy]
+  release_command = "alembic upgrade head"

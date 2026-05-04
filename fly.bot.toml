@@ -1,0 +1,27 @@
+# Fly.io configuration for the Telegram bot worker process.
+#
+# Usage:
+#   flyctl launch --config fly.bot.toml --no-deploy
+#   flyctl secrets set -c fly.bot.toml \
+#       OPENAI_API_KEY=... TAVILY_API_KEY=... \
+#       TELEGRAM_BOT_TOKEN=... RESEARCH_API_KEY=... \
+#       API_BASE_URL=https://research-assistant.fly.dev
+#   flyctl deploy -c fly.bot.toml
+
+app = "research-assistant-bot"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LOG_FORMAT = "json"
+  API_BASE_URL = "https://research-assistant.fly.dev"
+
+[processes]
+  bot = "python -m bot.bot"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

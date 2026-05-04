@@ -1,0 +1,14 @@
+{
+  "topics": [
+    "LangGraph vs CrewAI in 2026",
+    "CRAG (Corrective RAG) pattern and when to use it",
+    "pgvector vs dedicated vector databases (Pinecone, Weaviate)",
+    "Multi-agent coordination patterns for LLM apps",
+    "Human-in-the-loop interrupt design in LangGraph",
+    "LLM cost optimization strategies for production",
+    "Structured output vs function calling vs JSON mode",
+    "Observability for LLM-powered backends",
+    "Prompt injection defenses in agentic systems",
+    "Async vs sync for LLM-heavy Python backends"
+  ]
+}

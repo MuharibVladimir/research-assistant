@@ -1,0 +1,104 @@
+[project]
+name = "research-assistant"
+version = "0.1.0"
+description = "Multi-agent research assistant built with LangGraph + LangChain"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    # LangGraph / LangChain
+    "langgraph>=0.4.0",
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langchain-community>=0.3.0",
+    # FastAPI
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "sse-starlette>=2.2.0",
+    # Database
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.14.0",
+    "psycopg[binary,pool]>=3.2.0",
+    "pgvector>=0.3.0",
+    # Config / utils
+    "pydantic-settings>=2.7.0",
+    "python-dotenv>=1.0.0",
+    # Search tool
+    "tavily-python>=0.5.0",
+    "langchain-tavily>=0.2.17",
+    "aiogram>=3.27.0",
+    "httpx>=0.28.1",
+    "tenacity>=9.1.4",
+    "structlog>=25.5.0",
+    "sentry-sdk[fastapi]>=2.58.0",
+    "prometheus-fastapi-instrumentator>=7.1.0",
+    "redis[hiredis]>=5.0",
+    "langchain-anthropic>=1.4.0",
+    "mcp[cli]>=1.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
+    "httpx>=0.28.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra"
+markers = [
+    "real_db: tests that require a real Postgres container (spawned via testcontainers)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line-too-long — covered by formatter
+    "B008",  # function-call-in-default-argument — fastapi Depends/Header idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011", "SIM117"]
+
+[tool.mypy]
+python_version = "3.13"
+strict_optional = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+exclude = ["migrations/", "tests/"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
+    "httpx>=0.28.0",
+    "pytest-cov>=7.1.0",
+    "asgi-lifespan>=2.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.15.10",
+    "mypy>=1.20.1",
+    "testcontainers[postgres]>=4.0",
+    "locust>=2.43.4",
+]

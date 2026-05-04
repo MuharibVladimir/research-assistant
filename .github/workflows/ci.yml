@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run ruff check app bot tests
+      - run: uv run ruff format --check app bot tests
+
+  typecheck:
+    name: Typecheck (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run mypy app
+        continue-on-error: true  # mypy strictness is a follow-up
+
+  test:
+    name: Tests (pytest, 70% cov)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: research
+          POSTGRES_PASSWORD: research
+          POSTGRES_DB: research_db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U research -d research_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://research:research@localhost:5432/research_db
+      OPENAI_API_KEY: sk-test
+      TAVILY_API_KEY: tvly-test
+      RESEARCH_API_KEY: ""
+      LOG_FORMAT: human
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run alembic upgrade head
+      - run: uv run pytest --cov=app --cov-fail-under=70 --cov-report=term
+
+  llm-eval:
+    name: LLM quality eval (faithfulness + judge gates)
+    runs-on: ubuntu-latest
+    # Only on main / release branches — eval is expensive and needs live API key.
+    if: github.ref == 'refs/heads/main'
+    needs: [lint, typecheck, test]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: research
+          POSTGRES_PASSWORD: research
+          POSTGRES_DB: research_db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U research -d research_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://research:research@localhost:5432/research_db
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      RESEARCH_API_KEY: ""
+      LOG_FORMAT: human
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run alembic upgrade head
+      # Run 3 topics only (cost control), enforce both judge + RAGAS gates
+      - run: |
+          uv run python -m scripts.eval \
+            --topics 3 \
+            --out eval_report.md \
+            --fail-below-relevance 3.5 \
+            --fail-below-faithfulness 0.7 \
+            --fail-below-answer-relevance 0.5
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: eval_report.md
+
+  docker-build:
+    name: Docker build (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: research-assistant:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

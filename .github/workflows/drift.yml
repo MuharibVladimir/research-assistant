@@ -1,0 +1,53 @@
+name: Nightly drift detection
+
+# G-2: runs the eval harness against the fixed golden set every night and
+# fails the workflow if any metric dropped >tolerance vs the trailing
+# 7-day median. Catches silent quality degradation that PR-time evals miss.
+
+on:
+  schedule:
+    - cron: "0 2 * * *"  # 02:00 UTC every day
+  workflow_dispatch:
+
+jobs:
+  drift:
+    name: Eval drift vs 7-day median
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: research
+          POSTGRES_PASSWORD: research
+          POSTGRES_DB: research_db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U research -d research_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://research:research@localhost:5432/research_db
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      RESEARCH_API_KEY: ""
+      LOG_FORMAT: human
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run alembic upgrade head
+      - run: |
+          uv run python -m scripts.eval_drift \
+            --topics 5 \
+            --tolerance 0.05 \
+            --out drift.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drift-report
+          path: drift.md
