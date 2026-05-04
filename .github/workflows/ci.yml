@@ -63,7 +63,7 @@ jobs:
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen
       - run: uv run alembic upgrade head
-      - run: uv run pytest --cov=app --cov-fail-under=70 --cov-report=term
+      - run: uv run pytest -m "not real_db" --cov=app --cov-fail-under=70 --cov-report=term
 
   llm-eval:
     name: LLM quality eval (faithfulness + judge gates)

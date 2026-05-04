@@ -23,7 +23,6 @@ build/
 .vscode/
 .idea/
 *.swp
-README.md
 docs/
 tests/
 monitoring/grafana-data/
