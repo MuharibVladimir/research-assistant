@@ -68,8 +68,9 @@ jobs:
   llm-eval:
     name: LLM quality eval (faithfulness + judge gates)
     runs-on: ubuntu-latest
-    # Only on main / release branches — eval is expensive and needs live API key.
-    if: github.ref == 'refs/heads/main'
+    # Only on main / release branches — eval is expensive and needs live API keys.
+    # Skipped when OPENAI_API_KEY secret is not configured (e.g. forks, fresh clones).
+    if: github.ref == 'refs/heads/main' && vars.RUN_LLM_EVAL == 'true'
     needs: [lint, typecheck, test]
     services:
       postgres:
